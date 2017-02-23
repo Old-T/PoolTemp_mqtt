@@ -11,20 +11,19 @@
 //
 
 #include <ESP8266WiFi.h>
-//#include "Adafruit_MQTT.h"
-//#include "Adafruit_MQTT_Client.h"
 #include <PubSubClient.h>
 
 // Your personal WiFi- and Adafruit IO credentials
 // Should define WLAN_SSID, WLAN_PASS and AIO_KEY and AIO_USERNAME
 #include "WIFI_and_Adafruit_IO_parameters.h"
-
+//#define test
+#define logging
 //
 // Adafruit IO setup
 //
 
 WiFiClient client;
-PubSubClient  mqtt("192.168.2.50", 1883, client);
+PubSubClient  mqtt("192.168.2.50", 1883, NULL, client);
 
 
 // Sensor setup
@@ -45,16 +44,16 @@ DallasTemperature PoolTemp(&ourWire2);
 
 void MQTT_connect()
 {
-  mqtt.setServer('192.168.2.50', 1883 );
   if (mqtt.connected())
   {
+    Serial.println("Already connected");
     return;
   }
 
   Serial.print("Connecting to MQTT... ");
 
   int8_t ret;
-  while ((ret = mqtt.connect("Pool")) != 0)
+  while (!mqtt.connect("Pool"))
   {
     Serial.println("Retrying MQTT connection in 5 seconds...");
     mqtt.disconnect();
@@ -64,27 +63,36 @@ void MQTT_connect()
 
 }
 
-void sendDataToAdafruitIO(float pooltemp, float poolhousetemp)
+void sendDataToMQTT(float pooltemp, float poolhousetemp)
 {
   Serial.println("Start sending data to Ubuntu MQTT...");
-
   MQTT_connect();
+#ifdef test
+if(!mqtt.publish("Home/Temp/Pool", "2.54"))
+  Serial.println(mqtt.state()  );
+return;
+#endif
   char Value[80];
-  sprintf( Value, "%d", pooltemp);
+  dtostrf(pooltemp,5,2,Value);
+  Serial.println(Value);
   if (mqtt.publish("Home/Temp/Pool", Value))
   {
     Serial.println(pooltemp);
     Serial.println("Sent temperature ok");
   }
+  else
+    Serial.println(mqtt.state());
+    
 
-  sprintf( Value, "%d", poolhousetemp);
-  if (mqtt.publish("Home/Temp/Pool", Value))
+  dtostrf(poolhousetemp,5,2,Value);
+  Serial.println(Value);
+  if (mqtt.publish("Home/Temp/Pooltak", Value))
   {
     Serial.println(poolhousetemp);
     Serial.println("Sent poolhouse temp ok");
   }
-  
-  unsigned long endTime = millis();
+  mqtt.disconnect();
+ 
 }
 
 void setupWiFi()
@@ -120,29 +128,33 @@ void setup()
 
   PoolHouseTemp.requestTemperatures();
   float poolHouseTemp = PoolHouseTemp.getTempCByIndex(0);
-  if (poolHouseTemp < 0)
+  if (poolHouseTemp < -30)
   {
     PoolHouseTemp.requestTemperatures();
     poolHouseTemp = PoolHouseTemp.getTempCByIndex(0);
   }
-
+#ifdef test
+  poolHouseTemp = 22.54;
+#endif
   Serial.print("PoolHouseTemp ");
   Serial.print(poolHouseTemp);
   Serial.println(" grader");
 
   PoolTemp.requestTemperatures();
   float poolTemp = PoolTemp.getTempCByIndex(0);
-  if (poolTemp < 0)
+  if (poolTemp < -5)
   {
     PoolTemp.requestTemperatures();
     poolTemp = PoolHouseTemp.getTempCByIndex(0);
   }
+#ifdef test
+  poolTemp = 21.52;
+#endif 
   Serial.print("PoolTemp ");
   Serial.print(poolTemp);
   Serial.println(" grader");
-
   if ( (poolHouseTemp < 70) && (poolTemp < 70))
-    sendDataToAdafruitIO(poolTemp, poolHouseTemp);
+    sendDataToMQTT(poolTemp, poolHouseTemp);
 
   // Put the board to deep sleep to save power. Will send a signal on D16 when it is time to wake up.
   // Thus, connect D16 to the reset pin. After reset, setup will be executed again.
