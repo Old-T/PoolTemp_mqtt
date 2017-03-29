@@ -32,15 +32,47 @@ PubSubClient  mqtt("192.168.2.50", 1883, NULL, client);
 #include <DallasTemperature.h>
 #define OUTDOOR_MEASUREMENT     4
 #define POOLTEMP_MEASUREMENT    5
+#define OUTDOOR2_MEASUREMENT    6
 // Setup for DS18B20
 #define ONE_WIRE_BUS 4                // Uses digital pin 3
 #define ONE_WIRE_BUS2 5                // Uses digital pin 4
+#define ONE_WIRE_BUS3 6   // Uses digital pin 5
+
 OneWire ourWire(ONE_WIRE_BUS);
 OneWire ourWire2(ONE_WIRE_BUS2);
+OneWire ourWire3(ONE_WIRE_BUS3);
 DallasTemperature PoolHouseTemp(&ourWire);
 DallasTemperature PoolTemp(&ourWire2);
+DallasTemperature OutdoorTemp(&ourWire3);
 
 #define SLEEP_SECONDS 600
+
+int GetTemp( DallasTemperature *TempSensor, float *ReadValue, float MinValid, float MaxValid)
+{
+    TempSonser->requestTemperatures();
+    float value = TempSensor->getTempCByIndex(0);
+
+    if((value > MinValid) && (value < MaxValid))
+    {
+      *ReadValue = value;
+      return 1;
+    }
+    int LoopVar = 0;
+
+    while( (LoopVar++ <10))
+    {
+      TempSonser->requestTemperatures();
+      value = TempSensor->getTempCByIndex(0);
+
+      if((value > MinValid) && (value < MaxValid))
+      {
+        *ReadValue = value;
+        return 1;
+      }
+    }
+    // No valid value
+    return 0;
+}
 
 void MQTT_connect()
 {
@@ -63,34 +95,23 @@ void MQTT_connect()
 
 }
 
-void sendDataToMQTT(float pooltemp, float poolhousetemp)
+void sendDataToMQTT(float temp, char *MQTT_Key)
 {
   Serial.println("Start sending data to Ubuntu MQTT...");
   MQTT_connect();
-#ifdef test
-if(!mqtt.publish("Home/Temp/Pool", "2.54"))
-  Serial.println(mqtt.state()  );
-return;
-#endif
+
   char Value[80];
-  dtostrf(pooltemp,5,2,Value);
+  dtostrf(temp,5,2,Value);
   Serial.println(Value);
-  if (mqtt.publish("Home/Temp/Pool", Value))
+  if (mqtt.publish(MQTT_Key, Value))
   {
-    Serial.println(pooltemp);
+    Serial.println(temp);
     Serial.println("Sent temperature ok");
   }
   else
     Serial.println(mqtt.state());
     
 
-  dtostrf(poolhousetemp,5,2,Value);
-  Serial.println(Value);
-  if (mqtt.publish("Home/Temp/Pooltak", Value))
-  {
-    Serial.println(poolhousetemp);
-    Serial.println("Sent poolhouse temp ok");
-  }
   mqtt.disconnect();
  
 }
@@ -125,36 +146,73 @@ void setup()
 {
   // Serial.println("Start!");
   setupWiFi();
-
+  float Temp;
+  if( GetTemp( &PoolHouseTemp, &Temp, -30, 70) )
+    sendDataToMQTT(Temp, "Home/Temp/Pooltak");
+/*
   PoolHouseTemp.requestTemperatures();
-  float poolHouseTemp = PoolHouseTemp.getTempCByIndex(0);
-  if (poolHouseTemp < -30)
+  float Temp = PoolHouseTemp.getTempCByIndex(0);
+  if (Temp < -30)
   {
     PoolHouseTemp.requestTemperatures();
-    poolHouseTemp = PoolHouseTemp.getTempCByIndex(0);
+    Temp = PoolHouseTemp.getTempCByIndex(0);
   }
 #ifdef test
-  poolHouseTemp = 22.54;
-#endif
+  Temp = 22.54;
+  sendDataToMQTT(Temp, "Home/Temp/Pooltak");
+#else
   Serial.print("PoolHouseTemp ");
-  Serial.print(poolHouseTemp);
+  Serial.print(Temp);
   Serial.println(" grader");
+  if ( Temp < 70)
+    sendDataToMQTT(Temp, "Home/Temp/Pooltak");
+#endif
+*/
 
+  if( GetTemp( &PoolTemp, &Temp, -10, 50) )
+    sendDataToMQTT(Temp, "Home/Temp/Pool");
+
+/*
   PoolTemp.requestTemperatures();
-  float poolTemp = PoolTemp.getTempCByIndex(0);
-  if (poolTemp < -5)
+  Temp = PoolTemp.getTempCByIndex(0);
+  if (Temp < -5)
   {
     PoolTemp.requestTemperatures();
-    poolTemp = PoolHouseTemp.getTempCByIndex(0);
+    Temp = PoolHouseTemp.getTempCByIndex(0);
   }
 #ifdef test
-  poolTemp = 21.52;
-#endif 
+  Temp = 21.52;
+  sendDataToMQTT(Temp, "Home/Temp/Pool");
+#else
   Serial.print("PoolTemp ");
-  Serial.print(poolTemp);
+  Serial.print(Temp);
   Serial.println(" grader");
-  if ( (poolHouseTemp < 70) && (poolTemp < 70))
-    sendDataToMQTT(poolTemp, poolHouseTemp);
+  if ( Temp < 70)
+    sendDataToMQTT(Temp, "Home/Temp/Pool");
+#endif 
+*/
+  if( GetTemp( &OutdoorTemp, &Temp, -40, 40) )
+    sendDataToMQTT(Temp, "Home/Temp/Utetemp");
+
+/*
+  OutdoorTemp.requestTemperatures();
+  Temp = OutdoorTemp.getTempCByIndex(0);
+  if (Temp < -100)
+  {
+    OutdoorTemp.requestTemperatures();
+    Temp = PoolHouseTemp.getTempCByIndex(0);
+  }
+#ifdef test
+  Temp = 21.52;
+  sendDataToMQTT(Temp, "Home/Temp/Utetemp");
+#else
+  Serial.print("Utetemp ");
+  Serial.print(Temp);
+  Serial.println(" grader");
+  if ( Temp < 70)
+    sendDataToMQTT(Temp, "Home/Temp/Utetemp");
+#endif 
+*/
 
   // Put the board to deep sleep to save power. Will send a signal on D16 when it is time to wake up.
   // Thus, connect D16 to the reset pin. After reset, setup will be executed again.
